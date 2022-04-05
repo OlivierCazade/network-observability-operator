@@ -1419,15 +1419,6 @@ FlowlogsPipeline contains settings related to the flowlogs-pipeline component
         </td>
         <td>false</td>
       </tr><tr>
-        <td><b>printOutput</b></td>
-        <td>boolean</td>
-        <td>
-          PrintOutput is a debug flag to print flows exported in flowlogs-pipeline stdout<br/>
-          <br/>
-            <i>Default</i>: false<br/>
-        </td>
-        <td>false</td>
-      </tr><tr>
         <td><b>replicas</b></td>
         <td>integer</td>
         <td>
