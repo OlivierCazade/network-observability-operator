@@ -95,6 +95,19 @@ type FlowCollectorEBPF struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,8,opt,name=resources"`
 }
 
+// FlowCollectorKafka defines the desired Kafka config of FlowCollector
+type FlowCollectorKafka struct {
+	// Important: Run "make generate" to regenerate code after modifying this file
+
+	//+kubebuilder:default:=""
+	// Address of the kafka server
+	Address string `json:"address"`
+
+	//+kubebuilder:default:=""
+	// Address of the kafka topic to use
+	Topic string `json:"topic"`
+}
+
 // FlowCollectorFLP defines the desired flowlogs-pipeline state of FlowCollector
 type FlowCollectorFLP struct {
 	// Important: Run "make generate" to regenerate code after modifying this file
@@ -151,6 +164,10 @@ type FlowCollectorFLP struct {
 	//+kubebuilder:default:=true
 	// EnableKubeProbes is a flag to enable or disable Kubernetes liveness/readiness probes
 	EnableKubeProbes bool `json:"enableKubeProbes,omitempty"`
+
+	// Kafka configurations, if empty the operator will deploy a all-in-one FLP
+	// +optional
+	Kafka *FlowCollectorKafka `json:"kafka,omitempty"`
 }
 
 type FlowCollectorHPA struct {
