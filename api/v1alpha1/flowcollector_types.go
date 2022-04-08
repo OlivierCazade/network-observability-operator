@@ -46,6 +46,10 @@ type FlowCollectorSpec struct {
 	// Loki contains settings related to the loki client
 	Loki FlowCollectorLoki `json:"loki,omitempty"`
 
+	// Kafka configurations, if empty the operator will deploy a all-in-one FLP
+	// +optional
+	Kafka *FlowCollectorKafka `json:"kafka,omitempty"`
+
 	// ConsolePlugin contains settings related to the console dynamic plugin
 	ConsolePlugin FlowCollectorConsolePlugin `json:"consolePlugin,omitempty"`
 
@@ -104,7 +108,7 @@ type FlowCollectorKafka struct {
 	Address string `json:"address"`
 
 	//+kubebuilder:default:=""
-	// Address of the kafka topic to use
+	// Kafka topic to use
 	Topic string `json:"topic"`
 }
 
@@ -164,10 +168,6 @@ type FlowCollectorFLP struct {
 	//+kubebuilder:default:=true
 	// EnableKubeProbes is a flag to enable or disable Kubernetes liveness/readiness probes
 	EnableKubeProbes bool `json:"enableKubeProbes,omitempty"`
-
-	// Kafka configurations, if empty the operator will deploy a all-in-one FLP
-	// +optional
-	Kafka *FlowCollectorKafka `json:"kafka,omitempty"`
 }
 
 type FlowCollectorHPA struct {
