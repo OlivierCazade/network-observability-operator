@@ -156,7 +156,7 @@ func (r *singleFLPReconciler) Reconcile(ctx context.Context, desired *flowsv1alp
 	if desired.Spec.EBPF != nil {
 		portProtocol = corev1.ProtocolTCP
 	}
-	builder := newBuilder(r.nobjMngr.Namespace, portProtocol, desiredFLP, desiredLoki, r.confKind)
+	builder := newBuilder(r.nobjMngr.Namespace, portProtocol, desiredFLP, desiredLoki, desired.Spec.Kafka, r.confKind)
 	// Retrieve current owned objects
 	err = r.nobjMngr.FetchAll(ctx)
 	if err != nil {

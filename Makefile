@@ -292,6 +292,18 @@ undeploy-loki: ## Undeploy loki.
 	curl -S -L https://raw.githubusercontent.com/netobserv/documents/main/examples/zero-click-loki/1-storage.yaml | kubectl --ignore-not-found=true  delete -f - || true
 	-pkill --oldest --full "3100:3100"
 
+.PHONY: deploy-kafka
+deploy-kafka: ## Deploy loki.
+	@echo "### Deploying kafka"
+	kubectl create namespace $(NAMESPACE)  --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create -f "https://strimzi.io/install/latest?namespace=$(NAMESPACE)" -n $(NAMESPACE)
+	kubectl create -f https://raw.githubusercontent.com/netobserv/flowlogs-pipeline/main/pkg/test/e2e/kafka/kafka.strimzi.yaml  -n $(NAMESPACE)
+
+.PHONY: undeploy-kafka
+undeploy-kafka: ## Undeploy loki.
+	kubectl delete -f "https://strimzi.io/install/latest?namespace=$(NAMESPACE)" -n $(NAMESPACE)
+	kubectl delete -f https://raw.githubusercontent.com/netobserv/flowlogs-pipeline/main/pkg/test/e2e/kafka/kafka.strimzi.yaml  -n $(NAMESPACE)
+
 .PHONY: deploy-grafana
 deploy-grafana: ## Deploy grafana.
 	@echo "### Deploying grafana"

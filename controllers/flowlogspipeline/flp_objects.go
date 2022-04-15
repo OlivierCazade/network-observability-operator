@@ -54,10 +54,12 @@ type builder struct {
 	portProtocol   corev1.Protocol
 	desired        *flowsv1alpha1.FlowCollectorFLP
 	desiredLoki    *flowsv1alpha1.FlowCollectorLoki
+	desiredKafka   *flowsv1alpha1.FlowCollectorKafka
+	confKind       string
 	confKindSuffix string
 }
 
-func newBuilder(ns string, portProtocol corev1.Protocol, desired *flowsv1alpha1.FlowCollectorFLP, desiredLoki *flowsv1alpha1.FlowCollectorLoki, confKind string) builder {
+func newBuilder(ns string, portProtocol corev1.Protocol, desired *flowsv1alpha1.FlowCollectorFLP, desiredLoki *flowsv1alpha1.FlowCollectorLoki, desiredKafka *flowsv1alpha1.FlowCollectorKafka, confKind string) builder {
 	version := helper.ExtractVersion(desired.Image)
 	return builder{
 		namespace: ns,
@@ -70,7 +72,9 @@ func newBuilder(ns string, portProtocol corev1.Protocol, desired *flowsv1alpha1.
 		},
 		desired:        desired,
 		desiredLoki:    desiredLoki,
+		desiredKafka:   desiredKafka,
 		portProtocol:   portProtocol,
+		confKind:       confKind,
 		confKindSuffix: FlpConfSuffix[confKind],
 	}
 }
@@ -189,9 +193,135 @@ func (b *builder) podTemplate(configDigest string) corev1.PodTemplateSpec {
 	}
 }
 
-// returns a configmap with a digest of its configuration contents, which will be used to
-// detect any configuration change
-func (b *builder) configMap() (*corev1.ConfigMap, string) {
+func (b *builder) getConfigIngest() map[string]interface{} {
+	var ingest map[string]interface{}
+	if b.confKind == ConfKafkaTransformer {
+		ingest = map[string]interface{}{
+			"name": "ingest",
+			"ingest": map[string]interface{}{
+				"type": "kafka",
+				"kafka": map[string]interface{}{
+					"brokers": []string{b.desiredKafka.Address},
+					"topic":   b.desiredKafka.Topic,
+				},
+			},
+		}
+
+	} else if b.portProtocol == corev1.ProtocolUDP {
+		// UDP Port: IPFIX collector
+		ingest = map[string]interface{}{
+			"name": "ingest",
+			"ingest": map[string]interface{}{
+				"type": "collector",
+				"collector": map[string]interface{}{
+					"port":     b.desired.Port,
+					"hostname": "0.0.0.0",
+				},
+			},
+		}
+	} else {
+		// TCP Port: GRPC collector (eBPF agent) with Protobuf decoder
+		ingest = map[string]interface{}{
+			"name": "ingest",
+			"ingest": map[string]interface{}{
+				"type": "grpc",
+				"grpc": map[string]interface{}{
+					"port": b.desired.Port,
+				},
+			},
+		}
+	}
+	return ingest
+}
+
+func (b *builder) getConfigDecoder() map[string]interface{} {
+	var decoder map[string]interface{}
+	if b.confKind == ConfKafkaTransformer {
+		decoder = map[string]interface{}{
+			"name": "decode",
+			"decode": map[string]interface{}{
+				"type": "json",
+			},
+		}
+	} else if b.portProtocol == corev1.ProtocolUDP {
+		// UDP Port: IPFIX collector with JSON decoder
+		decoder = map[string]interface{}{
+			"name": "decode",
+			"decode": map[string]interface{}{
+				"type": "json",
+			},
+		}
+	} else {
+		// TCP Port: GRPC collector (eBPF agent) with Protobuf decoder
+		decoder = map[string]interface{}{
+			"name": "decode",
+			"decode": map[string]interface{}{
+				"type": "protobuf",
+			},
+		}
+	}
+	return decoder
+}
+
+func (b *builder) getConfigEnrich() map[string]interface{} {
+	var enrich map[string]interface{}
+	if b.confKind == ConfKafkaIngestor {
+		enrich = map[string]interface{}{
+			"name": "enrich",
+			"transform": map[string]interface{}{
+				"type": "none",
+			},
+		}
+	} else {
+		enrich = map[string]interface{}{
+			"name": "enrich",
+			"transform": map[string]interface{}{
+				"type": "network",
+				"network": map[string]interface{}{
+					"rules": []map[string]interface{}{
+						{
+							"input":  "SrcAddr",
+							"output": "SrcK8S",
+							"type":   "add_kubernetes",
+						},
+						{
+							"input":  "DstAddr",
+							"output": "DstK8S",
+							"type":   "add_kubernetes",
+						},
+					},
+				},
+			},
+		}
+	}
+	return enrich
+}
+
+func (b *builder) getConfigEncode() map[string]interface{} {
+	var encode map[string]interface{}
+	if b.confKind != ConfKafkaIngestor {
+		encode = map[string]interface{}{
+			"name": "encode",
+			"encode": map[string]interface{}{
+				"type": "none",
+			},
+		}
+	} else {
+		encode = map[string]interface{}{
+			"name": "encode",
+			"encode": map[string]interface{}{
+				"type": "kafka",
+				"kafka": map[string]interface{}{
+					"address": b.desiredKafka.Address,
+					"topic":   b.desiredKafka.Topic,
+				},
+			},
+		}
+	}
+	return encode
+}
+
+func (b *builder) getConfigLoki() map[string]interface{} {
 	lokiWrite := map[string]interface{}{
 		"type":   "loki",
 		"labels": constants.LokiIndexFields,
@@ -208,44 +338,29 @@ func (b *builder) configMap() (*corev1.ConfigMap, string) {
 		lokiWrite["timestampLabel"] = b.desiredLoki.TimestampLabel
 	}
 
-	var ingest, decoder map[string]interface{}
-	if b.portProtocol == corev1.ProtocolUDP {
-		// UDP Port: IPFIX collector with JSON decoder
-		ingest = map[string]interface{}{
-			"name": "ingest",
-			"ingest": map[string]interface{}{
-				"type": "collector",
-				"collector": map[string]interface{}{
-					"port":     b.desired.Port,
-					"hostname": "0.0.0.0",
-				},
-			},
-		}
-		decoder = map[string]interface{}{
-			"name": "decode",
-			"decode": map[string]interface{}{
-				"type": "json",
+	var loki map[string]interface{}
+	if b.confKind == ConfKafkaIngestor {
+		loki = map[string]interface{}{
+			"name": "loki",
+			"write": map[string]interface{}{
+				"type": "none",
 			},
 		}
 	} else {
-		// TCP Port: GRPC collector (eBPF agent) with Protobuf decoder
-		ingest = map[string]interface{}{
-			"name": "ingest",
-			"ingest": map[string]interface{}{
-				"type": "grpc",
-				"grpc": map[string]interface{}{
-					"port": b.desired.Port,
-				},
-			},
-		}
-		decoder = map[string]interface{}{
-			"name": "decode",
-			"decode": map[string]interface{}{
-				"type": "protobuf",
+		loki = map[string]interface{}{
+			"name": "loki",
+			"write": map[string]interface{}{
+				"type": "loki",
+				"loki": lokiWrite,
 			},
 		}
 	}
+	return loki
+}
 
+// returns a configmap with a digest of its configuration contents, which will be used to
+// detect any configuration change
+func (b *builder) configMap() (*corev1.ConfigMap, string) {
 	config := map[string]interface{}{
 		"log-level": b.desired.LogLevel,
 		"health": map[string]interface{}{
@@ -267,37 +382,11 @@ func (b *builder) configMap() (*corev1.ConfigMap, string) {
 			},
 		},
 		"parameters": []map[string]interface{}{
-			ingest, decoder,
-			{"name": "enrich",
-				"transform": map[string]interface{}{
-					"type": "network",
-					"network": map[string]interface{}{
-						"rules": []map[string]interface{}{
-							{
-								"input":  "SrcAddr",
-								"output": "SrcK8S",
-								"type":   "add_kubernetes",
-							},
-							{
-								"input":  "DstAddr",
-								"output": "DstK8S",
-								"type":   "add_kubernetes",
-							},
-						},
-					},
-				},
-			},
-			{"name": "encode",
-				"encode": map[string]interface{}{
-					"type": "none",
-				},
-			},
-			{"name": "loki",
-				"write": map[string]interface{}{
-					"type": "loki",
-					"loki": lokiWrite,
-				},
-			},
+			b.getConfigIngest(),
+			b.getConfigDecoder(),
+			b.getConfigEnrich(),
+			b.getConfigEncode(),
+			b.getConfigLoki(),
 		},
 	}
 
