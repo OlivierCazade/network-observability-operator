@@ -1493,6 +1493,17 @@ spec:
                     default: 1s
                     description: BatchWait is max time to wait before sending a batch
                     type: string
+                  cafile:
+                    description: Configuration of the loki deployment custom CA certificate
+                    properties:
+                      configmap:
+                        description: Name of the ConfigMap containing the CA certificate
+                        type: string
+                      configmapkey:
+                        description: Name of the key in the ConfigMap containing the
+                          CA certificate
+                        type: string
+                    type: object
                   maxBackoff:
                     default: 300s
                     description: MaxBackoff is the maximum backoff time for client
@@ -1534,6 +1545,10 @@ spec:
                     description: URL is the address of an existing Loki service to
                       push the flows to.
                     type: string
+                  usetls:
+                    default: false
+                    description: UseTLS to connect to
+                    type: boolean
                 type: object
               namespace:
                 default: ""

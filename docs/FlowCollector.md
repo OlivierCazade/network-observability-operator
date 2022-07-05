@@ -2638,6 +2638,13 @@ Settings related to the Loki client, used as a flow store.
         </td>
         <td>false</td>
       </tr><tr>
+        <td><b><a href="#flowcollectorspeclokicafile">cafile</a></b></td>
+        <td>object</td>
+        <td>
+          Configuration of the loki deployment custom CA certificate<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
         <td><b>maxBackoff</b></td>
         <td>string</td>
         <td>
@@ -2698,6 +2705,49 @@ Settings related to the Loki client, used as a flow store.
           URL is the address of an existing Loki service to push the flows to.<br/>
           <br/>
             <i>Default</i>: http://loki:3100/<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
+        <td><b>usetls</b></td>
+        <td>boolean</td>
+        <td>
+          UseTLS to connect to<br/>
+          <br/>
+            <i>Default</i>: false<br/>
+        </td>
+        <td>false</td>
+      </tr></tbody>
+</table>
+
+
+### FlowCollector.spec.loki.cafile
+<sup><sup>[↩ Parent](#flowcollectorspecloki)</sup></sup>
+
+
+
+Configuration of the loki deployment custom CA certificate
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Required</th>
+        </tr>
+    </thead>
+    <tbody><tr>
+        <td><b>configmap</b></td>
+        <td>string</td>
+        <td>
+          Name of the ConfigMap containing the CA certificate<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
+        <td><b>configmapkey</b></td>
+        <td>string</td>
+        <td>
+          Name of the key in the ConfigMap containing the CA certificate<br/>
         </td>
         <td>false</td>
       </tr></tbody>

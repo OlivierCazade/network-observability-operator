@@ -30,6 +30,9 @@ const configPath = "/opt/app-root/"
 // any external configuration change
 const PodConfigurationDigest = "flows.netobserv.io/" + configMapName
 
+const tlsLokiVolume = "lokica"
+const tlsLokiPath = "/var/loki-cert/"
+
 type builder struct {
 	namespace   string
 	labels      map[string]string
@@ -109,6 +112,66 @@ func buildArgs(desired *flowsv1alpha1.FlowCollectorConsolePlugin, desiredLoki *f
 }
 
 func (b *builder) podTemplate(cmDigest string) *corev1.PodTemplateSpec {
+	volumes := []corev1.Volume{{
+		Name: secretName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: secretName,
+			},
+		},
+	}, {
+		Name: configVolume,
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: configMapName,
+				},
+			},
+		},
+	},
+	}
+
+	volumeMounts := []corev1.VolumeMount{{
+		Name:      secretName,
+		MountPath: "/var/serving-cert",
+		ReadOnly:  true,
+	},
+		{
+			Name:      configVolume,
+			MountPath: configPath,
+			ReadOnly:  true,
+		}}
+
+	args := []string{
+		"-cert", "/var/serving-cert/tls.crt",
+		"-key", "/var/serving-cert/tls.key",
+		"-loki", querierURL(b.desiredLoki),
+		"-loki-labels", strings.Join(constants.LokiIndexFields, ","),
+		"-loglevel", b.desired.LogLevel,
+		"-frontend-config", configPath + configFile,
+	}
+
+	if b.desiredLoki != nil && b.desiredLoki.UseTLS {
+		TLSLokiVolume := corev1.Volume{
+			Name: tlsLokiVolume,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: b.desiredLoki.CAFile.ConfigMap,
+					},
+				},
+			},
+		}
+		tlsLokiVolumeMount := corev1.VolumeMount{
+			MountPath: tlsLokiPath,
+			Name:      tlsLokiVolume,
+		}
+		volumes = append(volumes, TLSLokiVolume)
+		volumeMounts = append(volumeMounts, tlsLokiVolumeMount)
+		args = append(args, "--loki-ca-path")
+		args = append(args, tlsLokiPath+b.desiredLoki.CAFile.ConfigMapKey)
+	}
+
 	return &corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: b.labels,
@@ -122,43 +185,10 @@ func (b *builder) podTemplate(cmDigest string) *corev1.PodTemplateSpec {
 				Image:           b.desired.Image,
 				ImagePullPolicy: corev1.PullPolicy(b.desired.ImagePullPolicy),
 				Resources:       *b.desired.Resources.DeepCopy(),
-				VolumeMounts: []corev1.VolumeMount{{
-					Name:      secretName,
-					MountPath: "/var/serving-cert",
-					ReadOnly:  true,
-				},
-					{
-						Name:      configVolume,
-						MountPath: configPath,
-						ReadOnly:  true,
-					}},
-				Args: []string{
-					"-cert", "/var/serving-cert/tls.crt",
-					"-key", "/var/serving-cert/tls.key",
-					"-loki", querierURL(b.desiredLoki),
-					"-loki-labels", strings.Join(constants.LokiIndexFields, ","),
-					"-loglevel", b.desired.LogLevel,
-					"-frontend-config", configPath + configFile,
-				},
+				VolumeMounts:    volumeMounts,
+				Args:            args,
 			}},
-			Volumes: []corev1.Volume{{
-				Name: secretName,
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: secretName,
-					},
-				},
-			}, {
-				Name: configVolume,
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: configMapName,
-						},
-					},
-				},
-			},
-			},
+			Volumes:            volumes,
 			ServiceAccountName: constants.PluginName,
 		},
 	}

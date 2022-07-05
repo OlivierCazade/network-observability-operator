@@ -19,12 +19,15 @@ import (
 	flowsv1alpha1 "github.com/netobserv/network-observability-operator/api/v1alpha1"
 	"github.com/netobserv/network-observability-operator/controllers/constants"
 	"github.com/netobserv/network-observability-operator/pkg/helper"
+	promConfig "github.com/prometheus/common/config"
 )
 
 const configMapName = "flowlogs-pipeline-config"
 const configVolume = "config-volume"
 const configPath = "/etc/flowlogs-pipeline"
 const configFile = "config.json"
+const tlsLokiVolume = "lokica"
+const tlsLokiPath = "/var/loki-cert/"
 
 const (
 	healthServiceName       = "health"
@@ -183,6 +186,36 @@ func (b *builder) podTemplate(hostNetwork bool, configDigest string) corev1.PodT
 		dnsPolicy = corev1.DNSClusterFirstWithHostNet
 	}
 
+	volumes := []corev1.Volume{{
+		Name: configVolume,
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: configMapName + b.confKindSuffix,
+				},
+			},
+		},
+	}}
+
+	if b.desiredLoki != nil && b.desiredLoki.UseTLS {
+		TLSLokiVolume := corev1.Volume{
+			Name: tlsLokiVolume,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: b.desiredLoki.CAFile.ConfigMap,
+					},
+				},
+			},
+		}
+		tlsLokiVolumeMount := corev1.VolumeMount{
+			MountPath: tlsLokiPath,
+			Name:      tlsLokiVolume,
+		}
+		volumes = append(volumes, TLSLokiVolume)
+		container.VolumeMounts = append(container.VolumeMounts, tlsLokiVolumeMount)
+	}
+
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: b.labels,
@@ -191,17 +224,8 @@ func (b *builder) podTemplate(hostNetwork bool, configDigest string) corev1.PodT
 			},
 		},
 		Spec: corev1.PodSpec{
-			Tolerations: tolerations,
-			Volumes: []corev1.Volume{{
-				Name: configVolume,
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: configMapName + b.confKindSuffix,
-						},
-					},
-				},
-			}},
+			Tolerations:        tolerations,
+			Volumes:            volumes,
 			Containers:         []corev1.Container{container},
 			ServiceAccountName: constants.FLPName + b.confKindSuffix,
 			HostNetwork:        hostNetwork,
@@ -243,6 +267,14 @@ func (b *builder) addTransformStages(lastStage *config.PipelineBuilderStage) {
 		lokiWrite.URL = b.desiredLoki.URL
 		lokiWrite.TimestampLabel = "TimeFlowEndMs"
 		lokiWrite.TimestampScale = "1ms"
+		if b.desiredLoki.UseTLS {
+			lokiWrite.ClientConfig = &promConfig.HTTPClientConfig{
+				TLSConfig: promConfig.TLSConfig{
+					InsecureSkipVerify: true,
+					CAFile:             tlsLokiPath + b.desiredLoki.CAFile.ConfigMapKey,
+				},
+			}
+		}
 	}
 	enrichedStage.WriteLoki("loki", lokiWrite)
 
