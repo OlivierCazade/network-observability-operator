@@ -1,0 +1,14 @@
+#flp_confgen
+visualization:
+  type: grafana
+  grafana:
+    - expr: 'sum(rate(netobserv_ingest_flows_processed[5m]))'
+      type: graphPanel
+      dashboard: NetobservHealth
+      title:
+        Ingested flows rate
+    - expr: 'sum(rate(netobserv_loki_sent_entries_total[5m]))'
+      type: graphPanel
+      dashboard: NetobservHealth
+      title:
+        Flows sent to loki rate

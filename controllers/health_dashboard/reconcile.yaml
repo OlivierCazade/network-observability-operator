@@ -1,0 +1,10 @@
+#flp_confgen
+visualization:
+  type: grafana
+  grafana:
+    - expr: '(sum(rate(controller_runtime_reconcile_total{controller="flowcollector"}[1m])) by (result))'
+      legendFormat: '{{result}}'
+      type: graphPanel
+      dashboard: NetobservHealth
+      title:
+        Operator reconcile reconcile rate

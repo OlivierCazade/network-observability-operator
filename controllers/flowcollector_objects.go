@@ -1,6 +1,11 @@
 package controllers
 
 import (
+	"embed"
+	"fmt"
+	"path/filepath"
+
+	"github.com/netobserv/flowlogs-pipeline/pkg/confgen"
 	"github.com/netobserv/network-observability-operator/controllers/constants"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -64,4 +69,73 @@ func buildRoleBindingMonitoringReader(ns string) *rbacv1.ClusterRoleBinding {
 			Namespace: monitoringNamespace,
 		}},
 	}
+}
+
+//go:embed health_dashboard
+var healthDashboardEmbed embed.FS
+
+const (
+	dashboardConfigDir          = "health_dashboard"
+	healthDashboardName         = "NetobservHealth"
+	healthDashboardTitle        = "Netobserv health metrics"
+	healthDashboardTags         = "['netobserv-health']"
+	healthDashboardCMName       = "grafana-dashboard-netobserv-health"
+	healthDashboardCMNamespace  = "openshift-config-managed"
+	healthDashboardCMAnnotation = "console.openshift.io/dashboard"
+	healthDashboardCMFile       = "netobserv-health-metrics.json"
+)
+
+func buildHealthDashboard() (*corev1.ConfigMap, error) {
+	entries, err := healthDashboardEmbed.ReadDir(dashboardConfigDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to access metrics_definitions directory: %w", err)
+	}
+
+	cg := confgen.NewConfGen(&confgen.Options{})
+
+	config := confgen.Config{
+		Visualization: confgen.ConfigVisualization{
+			Grafana: confgen.ConfigVisualizationGrafana{
+				Dashboards: []confgen.ConfigVisualizationGrafanaDashboard{
+					{
+						Name:          healthDashboardName,
+						Title:         healthDashboardTitle,
+						TimeFrom:      "now",
+						Tags:          healthDashboardTags,
+						SchemaVersion: "16",
+					},
+				},
+			},
+		},
+	}
+	cg.SetConfig(&config)
+
+	for _, entry := range entries {
+		fileName := entry.Name()
+		srcPath := filepath.Join(dashboardConfigDir, fileName)
+
+		input, err := healthDashboardEmbed.ReadFile(srcPath)
+		if err != nil {
+			return nil, fmt.Errorf("error reading metrics file %s; %w", srcPath, err)
+		}
+		err = cg.ParseDefinition(fileName, input)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing metrics file %s; %w", srcPath, err)
+		}
+	}
+
+	jsonStr, _ := cg.GenerateGrafanaJson()
+	configMap := corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      healthDashboardCMName,
+			Namespace: healthDashboardCMNamespace,
+			Labels: map[string]string{
+				healthDashboardCMAnnotation: "true",
+			},
+		},
+		Data: map[string]string{
+			healthDashboardCMFile: jsonStr,
+		},
+	}
+	return &configMap, nil
 }

@@ -334,6 +334,13 @@ func (r *FlowCollectorReconciler) reconcileOperator(ctx context.Context, clientH
 			return err
 		}
 	}
+	desiredHealthDashboardCM, err := buildHealthDashboard()
+	if err != nil {
+		return err
+	}
+	if err := clientHelper.ReconcileConfigMap(ctx, desiredHealthDashboardCM); err != nil {
+		return err
+	}
 	return nil
 }
 
